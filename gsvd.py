@@ -33,68 +33,81 @@ def csd(Q1,Q2):
         sys.exit()
     if m < n:
         V,U,Z,S,C = csd(Q2,Q1)
-        j = np.arange(p-1,-1,-1)
-        C = C[:,j]
-        S = S[:,j]
-        Z = Z[:,j]
-        m = min([m,p])
-        i = np.arange(m-1,0,-1)
-        C[0:m-1,:] = C[i,:]; 
-        U[:,0:m-1] = U[:,i];
-        n = min([n,p])
-        i = np.arange(n-1,-1,-1)
-        S[0:n-1,:] = S[i,:]
-        V[:,0:n-1] = V[:,i];
-        return V,U,Z,S,C
-        # Henceforth, n <= m.
+        j = np.arange(p-1,-1,-1); C = C[:,j]; S = S[:,j]; Z = Z[:,j]
+        m = min([m,p]); i = np.arange(m-1,-1,-1); C[0:m,:] = C[i,:]; U[:,0:m] = U[:,i]
+        n = min([n,p]); i = np.arange(n-1,-1,-1); S[0:n,:] = S[i,:]; V[:,0:n] = V[:,i]
+        return U,V,Z,C,S
 
-    U,C,Z = np.linalg.svd(Q1);
-    C = add_zeros(C,Q1)
+    # Henceforth, m >= n.
+    U,C,Z = np.linalg.svd(Q1); Z = Z.T
+    C = add_zeros(C,Q1) 
     
-    q = min([m,p])
-    i = np.arange(0,q)
-    j = np.arange(q-1,-1,-1)
-    C[i,i]=C[j,j]
+    q = min([m,p]);
+    i = np.arange(0,q);
+    j = np.arange(q-1,-1,-1);
+    C[i,i] = C[j,j]
     U[:,i] = U[:,j]
     Z[:,i] = Z[:,j]
-    Z = np.fliplr(np.flipud(Z)).T
     S = np.dot(Q2,Z)
-    if q == 0:
-        k = 0
+    
+    #ALL OK!
+    #print "C,U,Z,S"
+    #print C
+    #print U
+    #print Z
+    #print S
+
+    if q == 1:
+        k = 0; row,col = S.shape;
+        V = np.eye(row,row)
     elif m < p:
-        k = n;
-    else:
-        k = max([0,(np.diag(C) <= 1/np.sqrt(2)).argmax()])
-    V, R = scipy.linalg.qr(S[:,0:k+1]) ## THis works when k=0. Test when k > 0.
+        k = n
+        V,R = scipy.linalg.qr(S[:,0:k]) 
+    else: #THIS BRANCH IS OK!
+        ind = np.where(np.diag(C) <= 1/np.sqrt(2))[0]
+        if ind.size != 0:
+            k = ind.argmax()+1
+            V,R = scipy.linalg.qr(S[:,0:k]) 
+        else:
+            k = 0; row,col = S.shape;
+            V = np.eye(row,row)
+    
+    #print "q,C,k,S[0:k],V"
+    #print q  
+    #print C
+    #print k
+    #print S[:,0:k]
+    #print V
+
     S = np.dot(V.T,S)
     r = min([k,m])
-    S[:,0:r]=diagf(S[:,0:r])
+    S[:,0:r] = diagf(S[:,0:r])  #if r=0 this works doing nothing
     if m == 1 and p > 1:
-        S[1,1] = 0
+        S[0,0] = 0.0
 
     if k < min([n,p]):
         r = min([n,p])
-        if k == 0:
-            i=np.arange(k+1,n)
-            j=np.arange(k+1,r)
-        else:
-            i=np.arange(k,n)
-            j=np.arange(k,r)
-        UT, ST, VT = scipy.linalg.svd(slice_matrix(S,i,j))
-        ST = add_zeros(ST,np.zeros([p,p-1]))
+        i=np.arange(k,n)
+        j=np.arange(k,r)
+        TMP = S[np.ix_(i,j)]
+        UT, ST, VT = scipy.linalg.svd(TMP); VT = VT.T
+        ST = add_zeros(ST,TMP)
         if k > 0: 
-            S[0:k,j] = 0
-        S[k+1:n,k+1:r] = ST
+            S[0:k,j] = 0.0
+        #print UT; print ST; print VT
+        #S[i,j] = ST
+        S[np.ix_(i,j)] = ST
         C[:,j] = np.dot(C[:,j],VT)
         V[:,i] = np.dot(V[:,i],UT)
         Z[:,j] = np.dot(Z[:,j],VT)
+        #print S; print C; print V; print Z
         i = np.arange(k,q)
-        t = np.arange(0,len(i))
-        Q,R = scipy.linalg.qr(C[k+1:n,k+1:r])
-        C[k+1:n,k+1:r] = diagf(R)
-        U[:,t] = np.dot(U[:,i],Q)
+        Q,R = scipy.linalg.qr(C[np.ix_(i,j)])
+        #C[i,j] = diagf(R)
+        C[np.ix_(i,j)] = diagf(R)
+        U[:,i] = np.dot(U[:,i],Q)
 
-    if m < p:
+    if m < p: #BRANCH NOT TESTED YET!
         # Diagonalize final block of S and permute blocks.
         q = min(scipy.sparse.lil_matrix(abs(diagk(C,0))>10*m*np.spacing(1)).getnnz(), 
             scipy.sparse.lil_matrix(abs(diagk(S,0))>10*n*np.spacing(1)).getnnz())
@@ -102,25 +115,27 @@ def csd(Q1,Q2):
         j = np.arange(m,p)
         # At this point, S(i,j) should have orthogonal columns and the
         # elements of S(:,q+1:p) outside of S(i,j) should be negligible.
-        Q,R = scipy.linalg.qr(S[q:n,m:p])
-        S[:,q:p-1] = 0
-        S[q:n,m:p] = diagf(R)
+        Q,R = scipy.linalg.qr(S[np.ix_(i,j)])
+        S[:,q:p] = 0.0
+        S[i,j] = diagf(R)
         V[:,i] = np.dot(V[:,i],Q)
         if n > 1:
             i=np.concatenate([np.arange(q,q+p-m),np.arange(0,q),np.arange(q+p-m,n)])
         else:
-            i = 1
+            #i = 1
+            i = 0
         j = np.concatenate([np.arange(m,p),np.arange(0,m)])
-        t = np.arange(0,len(j))
-        C[:,[t]] = C[:,[j]]
-        del t
-        S = S[q:n,m:p]
+        #t = np.arange(0,len(j))
+        #C[:,[t]] = C[:,[j]]
+        #del t
+        C = C[:,j]
+        S = S[i,j]
         Z = Z[:,j]
         V = V[:,i]
 
-    if n < p:
+    if n < p: #BRANCH NOT TESTED YET!
         # Final block of S is negligible.
-        S[:,n:p] = 0;
+        S[:,n:p] = 0.0;
    
     # Make sure C and S are real and positive.
     U,C = diagp(U,C,max([0,p-m]))
@@ -128,10 +143,10 @@ def csd(Q1,Q2):
     V,S = diagp(V,S,0)
     S = S.real
 
-    return U, V, Z, C, S
+    return U,V,Z,C,S
 
 # <codecell>
-
+#TESTED OK!
 def add_zeros(C,Q):
     '''ADD_ZEROS returns the vector C padded with zeros to be the same size as matrix Q. 
     The values of C will be along the diagonal.
@@ -152,7 +167,7 @@ def add_zeros(C,Q):
 def diagk(X,k):
     '''DIAGK K-th matrix diagonal.
     DIAGK(X,k) is the k-th diagonal of X, even if X is a vector.'''
-    if min(X.shape)> 1:
+    if min(X.shape) > 1:
         D = np.diag(X,k)
     elif 0 <= k and 1+k <= X.shape[1]:
         D = X(1+k)
@@ -163,7 +178,7 @@ def diagk(X,k):
     return D
 
 # <codecell>
-
+#TESTED OK!
 def diagf(X):
     ''' DIAGF Diagonal force.
     X = DIAGF(X) zeros all the elements off the main diagonal of X.
@@ -181,8 +196,8 @@ def diagp(Y,X,k):
     D = diagk(X,k)
     j = [item for item, a in enumerate(D) if a.real < 0 or a.imag != 0]
     D = np.diag(np.divide(D[j].conjugate(),abs(D[j]))) ### CHECK TYPE OF DIVISION HERE!!!
-    Y[:,j] = Y[:,j]*D.T
-    X[j,:] = D*X[j,:]
+    Y[:,j] = np.dot(Y[:,j],D.T)
+    X[j,:] = np.dot(D,X[j,:])
     return Y, X
 
 # <codecell>
@@ -218,7 +233,7 @@ def trim_matrix_row(R,p):
     return R
 
 # <codecell>
-
+# NOT USED ANYMORE CHANGED TO USE np.ix_ SLICING
 def slice_matrix(X,i,j):
     '''SLICE_MATRIX returns X sliced to the 
     vector of i row indices and j column indices
@@ -242,7 +257,7 @@ def gsvd(A,B,*arg):
     QA = []
     QB = []
     if len(arg) > 0: 
-        # Economy-sized.
+        #Economy-sized.
         if m > p:
             QA, A = scipy.linalg.qr(A)
             QA, A = diagp(QA,A,0)
@@ -251,11 +266,12 @@ def gsvd(A,B,*arg):
             QB, B = scipy.linalg.qr(B)
             QB, B = diagp(QB,B,0)
             n = p
-    Q, R = scipy.linalg.qr(np.concatenate([A,B]),0)
+    Q,R = scipy.linalg.qr(np.concatenate([A,B]),0)
     Q = trim_matrix_col(Q,p)
     R = trim_matrix_row(R,p)
     toto = R
-    U, V, Z, C, S = csd(Q[0:m,:],Q[m:m+n,:])
+    U,V,Z,C,S = csd(Q[0:m,:],Q[m:m+n,:])
+
     #if len(argout) < 2:
     #    # Vector of generalized singluar values.
     #    wsave = warnings.warn("'query','all'",FutureWarning)
@@ -264,40 +280,12 @@ def gsvd(A,B,*arg):
     #    U = np.concatenate([np.ndarray(zeros((q-m,1,),Float)),diagk(C,max(0,q-m))]) / np.concatenate([diagk(S,0),np.ndarray(zeros(q-n,1))])
     #    warning(wsave)
     #else:
-    # Full composition
+    
+    #Full composition
     X = np.dot(R.T,Z)
     if QA:
         U = np.dot(QA,U)
     if QB:
         V = np.dot(QB,V)
 
-    print "All done gsvd!"
     return U,V,X,C,S
-    
-
-# <codecell>
-
-    
-
-# <codecell>
-
-#B = np.array([[1,2,3],[4,5,6],[7,8,9],[10,11,12]])
-#A = np.array([[7,8,9],[10,11,12],[13,14,15],[16,17,18],[19,20,21]])
-#U,V,X,C,S = gsvd(A,B)
-
-# <codecell>
-
-#print "U:"
-#print U
-#print "V:"
-#print V
-#print "X:"
-#print X
-#print "C:"
-#print C
-#print "S:"
-#print S
-
-# <codecell>
-
-
